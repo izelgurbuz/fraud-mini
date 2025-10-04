@@ -20,7 +20,7 @@
 │       - Condition: e.g. aws:SecureTransport=false          │
 │  • Decides Allow or Deny                                   │
 └────────────────────────────────────────────────────────────┘
-
+ ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
 
 | Situation                   | What you use  | Example                                        |
 | --------------------------- | ------------- | ---------------------------------------------- |
@@ -42,6 +42,31 @@ So:
 → Logical names make templates reusable.
 → Physical names make real resources.
 → ARNs make permissions globally consistent.
+ ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+Simplified evaluation order for request to succeed (permission-wise)
+
+1- Start with implicit deny (everything is denied by default).
+
+2- Add any explicit Allows from IAM and resource policies.
+
+3- If an explicit Deny appears anywhere → final Deny.
+
+4- Final decision: the request is allowed only if both IAM and resource policies explicitly allow it, and no explicit Deny exists.
+
+AWS always evaluates both:
+
+- the identity-based policy (attached to the user or role), and
+
+- any resource-based policy (attached to the resource, like an S3 bucket)
+both sides must agree
+
+-----------------  ---------- ---------- ---------- ---------- ---------- ----------
+
+All newly created S3 buckets automatically enable Server-Side Encryption with S3-managed keys (SSE-S3) by default.
+So , CloudTrail bucket is already encrypted with S3’s own key only not with my kms key
+
+-----------------  ---------- ---------- ---------- ---------- ---------- ----------
 
 
 Commands to check deployment:
@@ -74,3 +99,23 @@ Commands to check deployment:
 
 > aws cloudformation describe-stacks --stack-name fraudmini \
  --query "Stacks[0].Outputs[].[OutputKey,OutputValue]" --output table
+
+ ----
+
+> aws cloudtrail get-trail-status --name fraudmini-trail
+
+ ** check stack status when it's rolling back etc by "StackStatus" here: `aws cloudformation describe-stacks --stack-name fraudmini --region eu-west-2`
+
+ AN INCIDENT OCCURED:
+
+What happened :
+
+- CloudTrail checks the S3 bucket policy during creation.
+It only accepts two exact Allow statements (GetBucketAcl and PutObject with the ACL condition).
+
+- I had an extra Deny rule (DenyInsecureTransport), so CloudTrail’s validation failed — even though the logic was correct.
+
+- After creation, CloudTrail stops validating the bucket policy, so I could safely add extra rules later.
+
+- I removed the Deny temporarily -> deployed -> CloudTrail passed validation -> Trail created -> then I re-added the Deny rule -> deployed
+
