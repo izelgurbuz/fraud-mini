@@ -1,0 +1,37 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: "fraudmini: Stage 0.1 minimal API"
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 5
+    MemorySize: 256
+
+Resources:
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: fraudmini-api
+      StageName: prod
+      EndpointConfiguration: REGIONAL
+
+  HealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: fraudmini-health
+      CodeUri: src/health/
+      Handler: app.handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+      Events:
+        Health:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /health
+            Method: GET
+
+Outputs:
+  ApiUrl:
+    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod
