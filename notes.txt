@@ -70,3 +70,7 @@ Commands to check deployment:
 > aws s3api put-object --bucket "$RAW" --key test/ok.txt --body /tmp/ok.txt \
   --server-side-encryption aws:kms --ssekms-key-id "$KMS_ARN"
 
+----
+
+> aws cloudformation describe-stacks --stack-name fraudmini \
+ --query "Stacks[0].Outputs[].[OutputKey,OutputValue]" --output table
