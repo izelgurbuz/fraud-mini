@@ -1,0 +1,11 @@
+Commands to check deployment:
+
+> API_URL=$(aws cloudformation describe-stacks --stack-name fraudmini \
+  --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+> curl -s ${API_URL}/health
+
+----
+
+> aws kms list-aliases --query "Aliases[?AliasName=='alias/fraudmini-appdata']"
+
+----

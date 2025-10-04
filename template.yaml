@@ -9,6 +9,27 @@ Globals:
     MemorySize: 256
 
 Resources:
+  AppDataKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS CMK for fraudmini data
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowRootAccount
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: "kms:*"
+            Resource: "*"
+
+  AppDataKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/fraudmini-appdata
+      TargetKeyId: !Ref AppDataKey
+
   ApiGateway:
     Type: AWS::Serverless::Api
     Properties:
