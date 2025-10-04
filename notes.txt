@@ -1,3 +1,49 @@
+┌────────────────────────────────────────────────────────────┐
+│                   CloudFormation (CFN Layer)               │
+│  • Reads template.yaml                                     │
+│  • Creates resources (buckets, Lambdas, roles, etc.)       │
+│  • Sees "Bucket: !Ref RawEventsBucket"                     │
+│                                                            │
+│  Attaches PolicyDocument JSON to that specific bucket      │
+└────────────────────────────────────────────────────────────┘
+                           │
+                           │ (Stores JSON policy inside bucket metadata)
+                           ▼
+┌────────────────────────────────────────────────────────────┐
+│           IAM Evaluation Layer                             |         │
+│  • Every S3 API call passes through IAM                    │
+│  • IAM reads the PolicyDocument inside the bucket          │
+│  • Evaluates each Statement:                               │
+│       - Principal: who is calling                          │
+│       - Action: e.g. s3:GetObject                          │
+│       - Resource: which ARN (bucket or object)             │
+│       - Condition: e.g. aws:SecureTransport=false          │
+│  • Decides Allow or Deny                                   │
+└────────────────────────────────────────────────────────────┘
+
+
+| Situation                   | What you use  | Example                                        |
+| --------------------------- | ------------- | ---------------------------------------------- |
+| Talking to CloudFormation   | Logical name  | `!Ref RawEventsBucket`                         |
+| Talking to AWS CLI          | Physical name | `aws s3 ls s3://fraudmini-RawEventsBucket-...` |
+| Writing IAM/S3/KMS policies | ARN           | `arn:aws:s3:::fraudmini-RawEventsBucket-*`     |
+
+Why AWS designed it like this???
+
+Because AWS must:
+
+- Allow multiple layers of abstraction (template vs runtime)
+
+- Keep resources unique globally
+
+- Allow permissions across accounts and services via ARNs
+
+So:
+→ Logical names make templates reusable.
+→ Physical names make real resources.
+→ ARNs make permissions globally consistent.
+
+
 Commands to check deployment:
 
 > API_URL=$(aws cloudformation describe-stacks --stack-name fraudmini \
@@ -9,3 +55,18 @@ Commands to check deployment:
 > aws kms list-aliases --query "Aliases[?AliasName=='alias/fraudmini-appdata']"
 
 ----
+
+> RAW=$(aws cloudformation list-stack-resources --stack-name fraudmini \
+  --query "StackResourceSummaries[?LogicalResourceId=='RawEventsBucket'].PhysicalResourceId" --output text)
+
+# should FAIL - no encryption header
+> echo "should-fail" > /tmp/nope.txt
+> aws s3api put-object --bucket "$RAW" --key test/nope.txt --body /tmp/nope.txt || echo "Expected AccessDenied"
+
+# should SUCCEED with KMS
+> KMS_ARN=$(aws kms list-aliases --query "Aliases[?AliasName=='alias/fraudmini-appdata'].TargetKeyId" --output text \
+  | xargs -I{} aws kms describe-key --key-id {} --query "KeyMetadata.Arn" --output text)
+> echo "hello" > /tmp/ok.txt
+> aws s3api put-object --bucket "$RAW" --key test/ok.txt --body /tmp/ok.txt \
+  --server-side-encryption aws:kms --ssekms-key-id "$KMS_ARN"
+

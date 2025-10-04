@@ -30,6 +30,47 @@ Resources:
       AliasName: alias/fraudmini-appdata
       TargetKeyId: !Ref AppDataKey
 
+  RawEventsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub fraudmini-raw-events-${AWS::AccountId}-${AWS::Region}
+      VersioningConfiguration: { Status: Enabled }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref AppDataKey
+
+  RawEventsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref RawEventsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub arn:aws:s3:::${RawEventsBucket}
+              - !Sub arn:aws:s3:::${RawEventsBucket}/*
+            Condition:
+              Bool: { "aws:SecureTransport": "false" }
+          - Sid: EnforceKMSEncryptionOnPut
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:PutObject"
+            Resource: !Sub arn:aws:s3:::${RawEventsBucket}/*
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: "aws:kms"
+
   ApiGateway:
     Type: AWS::Serverless::Api
     Properties:
