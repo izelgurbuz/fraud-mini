@@ -119,3 +119,7 @@ It only accepts two exact Allow statements (GetBucketAcl and PutObject with the 
 
 - I removed the Deny temporarily -> deployed -> CloudTrail passed validation -> Trail created -> then I re-added the Deny rule -> deployed
 
+----
+
+> aws cloudformation describe-stacks --stack-name fraudmini \
+ --query "Stacks[0].Outputs[].[OutputKey,OutputValue]" --output table

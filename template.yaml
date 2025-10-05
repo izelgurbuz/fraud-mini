@@ -166,6 +166,60 @@ Resources:
       IsMultiRegionTrail: false
       EnableLogFileValidation: true
 
+  TransactionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub fraudmini-transactions-${AWS::AccountId}-${AWS::Region}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: transaction_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: transaction_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref AppDataKey
+
+  DecisionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub fraudmini-decisions-${AWS::AccountId}-${AWS::Region}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: transaction_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: transaction_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref AppDataKey
+
+  RulesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub fraudmini-rules-${AWS::AccountId}-${AWS::Region}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: rule_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: rule_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref AppDataKey
+
   ApiGateway:
     Type: AWS::Serverless::Api
     Properties:
@@ -202,3 +256,12 @@ Outputs:
   AppDataKmsKeyArn:
     Description: KMS key ARN
     Value: !GetAtt AppDataKey.Arn
+  TransactionsTableName:
+    Description: DynamoDB transactions table
+    Value: !Ref TransactionsTable
+  DecisionsTableName:
+    Description: DynamoDB decisions table
+    Value: !Ref DecisionsTable
+  RulesTableName:
+    Description: DynamoDB rules table
+    Value: !Ref RulesTable
