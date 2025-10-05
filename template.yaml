@@ -226,6 +226,7 @@ Resources:
       Name: fraudmini-api
       StageName: prod
       EndpointConfiguration: REGIONAL
+      DefinitionUri: openapi/score.yaml
 
   HealthFunction:
     Type: AWS::Serverless::Function

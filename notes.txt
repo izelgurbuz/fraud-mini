@@ -130,5 +130,28 @@ It only accepts two exact Allow statements (GetBucketAcl and PutObject with the 
 
 > RULES=$(aws cloudformation describe-stacks --stack-name fraudmini \
   --query "Stacks[0].Outputs[?OutputKey=='RulesTableName'].OutputValue" --output text)
-  
+
 > aws dynamodb scan --table-name "$RULES" --max-items 20 | jq '.Items'
+
+----
+
+sam build && sam deploy
+
+API_URL=$(aws cloudformation describe-stacks --stack-name fraudmini \
+  --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+
+#  Valid body  501 (because it is schema-only rn)
+# Expect: HTTP/1.1 501
+curl -i -s -X POST "${API_URL}/score" \
+  -H "Content-Type: application/json" \
+  -d '{"transaction_id":"txn_1","user_id":"u_1","amount":12.3,"currency":"GBP","merchant_id":"m_AMZ","channel":"card_not_present","ts":"2025-09-29T08:15:13Z","ip":"81.2.69.142","country":"GB","device_id":"dev_1","card_bin":"400000","card_last4":"4242","attempts_last_10min":1}'
+
+
+
+# Invalid body (missing required)  400 before Lambda
+# Expect: HTTP/1.1 400
+curl -i -s -X POST "${API_URL}/score" \
+  -H "Content-Type: application/json" \
+  -d '{"transaction_id":"txn_bad","amount":-5}'
+
+
