@@ -1,0 +1,10 @@
+[
+  {"rule_id":"R1","name":"amount_above_user_p99","threshold":1000,"weight":30,"enabled":true},
+  {"rule_id":"R2","name":"impossible_travel_kmh","threshold":500,"weight":25,"enabled":true},
+  {"rule_id":"R3","name":"new_device","threshold":1,"weight":20,"enabled":true},
+  {"rule_id":"R4","name":"too_many_attempts_10min","threshold":5,"weight":20,"enabled":true},
+  {"rule_id":"R5","name":"first_time_merchant_over_200","threshold":200,"weight":10,"enabled":true},
+  {"rule_id":"R6","name":"risky_bin","list":["999999","777777"],"weight":20,"enabled":true},
+  {"rule_id":"R7","name":"ip_country_mismatch_over_100","threshold":100,"weight":10,"enabled":true},
+  {"rule_id":"R8","name":"unusual_hour","threshold":"00:00-06:00","weight":10,"enabled":true}
+]

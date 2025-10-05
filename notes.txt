@@ -123,3 +123,12 @@ It only accepts two exact Allow statements (GetBucketAcl and PutObject with the 
 
 > aws cloudformation describe-stacks --stack-name fraudmini \
  --query "Stacks[0].Outputs[].[OutputKey,OutputValue]" --output table
+
+----
+
+> python scripts/seed_rules.py
+
+> RULES=$(aws cloudformation describe-stacks --stack-name fraudmini \
+  --query "Stacks[0].Outputs[?OutputKey=='RulesTableName'].OutputValue" --output text)
+  
+> aws dynamodb scan --table-name "$RULES" --max-items 20 | jq '.Items'
