@@ -1,0 +1,55 @@
+CognitoUserPool:
+  Type: AWS::Cognito::UserPool
+  Properties:
+    UserPoolName: fraudmini-userpool
+    Schema:
+      - Name: email
+        Required: true
+        Mutable: false
+    AutoVerifiedAttributes: [ email ]
+    Policies:
+      PasswordPolicy:
+        MinimumLength: 8
+        RequireLowercase: true
+        RequireNumbers: true
+        RequireSymbols: false
+        RequireUppercase: true
+
+# 1 Frontend client — for users (email + password login)
+CognitoFrontendClient:
+  Type: AWS::Cognito::UserPoolClient
+  Properties:
+    UserPoolId: !Ref CognitoUserPool
+    ClientName: fraudmini-frontend
+    GenerateSecret: false          # public client — no secret in browser
+    ExplicitAuthFlows:
+      - ALLOW_USER_PASSWORD_AUTH
+      - ALLOW_REFRESH_TOKEN_AUTH
+    SupportedIdentityProviders: [COGNITO]
+
+# 2 Backend client — for microservices (machine login)
+CognitoBackendClient:
+  Type: AWS::Cognito::UserPoolClient
+  Properties:
+    UserPoolId: !Ref CognitoUserPool
+    ClientName: fraudmini-backend
+    GenerateSecret: true           # private client — secret stored securely
+    AllowedOAuthFlowsUserPoolClient: true
+    AllowedOAuthFlows: [client_credentials]
+    AllowedOAuthScopes:
+      - https://fraudmini/api.read
+      - https://fraudmini/api.write
+
+
+>**** Two app clients = two ways to log in:
+
+Frontend: users authenticate with email+password.
+
+Backend: services authenticate with client ID + secret (no human).
+
+Both share the same user pool, but each has its own login flow and security boundary.
+
+>***** Frontend tokens represent users — they’re scoped to user-level actions and are short-lived.
+Backend tokens represent the application itself — they can perform system-level operations like batch writes, monitoring, or calling internal APIs.
+
+That’s why the backend client uses its own secret and OAuth scopes: it has capabilities that normal users should never have.
