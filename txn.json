@@ -1,0 +1,15 @@
+{
+  "transaction_id": "txn_1",
+  "user_id": "u_1",
+  "amount": 12.3,
+  "currency": "GBP",
+  "merchant_id": "m_AMZ",
+  "channel": "card_not_present",
+  "ts": "2025-09-29T08:15:13Z",
+  "ip": "81.2.69.142",
+  "country": "GB",
+  "device_id": "dev_1",
+  "card_bin": "400000",
+  "card_last4": "4242",
+  "attempts_last_10min": 1
+}

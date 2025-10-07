@@ -53,3 +53,53 @@ Both share the same user pool, but each has its own login flow and security boun
 Backend tokens represent the application itself — they can perform system-level operations like batch writes, monitoring, or calling internal APIs.
 
 That’s why the backend client uses its own secret and OAuth scopes: it has capabilities that normal users should never have.
+
+
+Get IDs:
+
+> POOL_ID=$(aws cloudformation describe-stacks --stack-name fraudmini \
+  --query "Stacks[0].Outputs[?OutputKey=='CognitoUserPoolId'].OutputValue" --output text)
+> CLIENT_ID=$(aws cloudformation describe-stacks --stack-name fraudmini \
+  --query "Stacks[0].Outputs[?OutputKey=='CognitoAppClientId'].OutputValue" --output text)
+echo $POOL_ID
+echo $CLIENT_ID
+
+
+Create user + set password:
+
+> aws cognito-idp admin-create-user \
+  --user-pool-id "$POOL_ID" \
+  --username demo@example.com \
+  --user-attributes Name=email,Value=demo@example.com \
+  --message-action SUPPRESS
+
+> aws cognito-idp admin-set-user-password \
+  --user-pool-id "$POOL_ID" \
+  --username demo@example.com \
+  --password 'Passw0rd!' \
+  --permanent
+
+
+Get a JWT (ID token):
+
+> ID_TOKEN=$(aws cognito-idp initiate-auth \
+  --auth-flow USER_PASSWORD_AUTH \
+  --client-id "$CLIENT_ID" \
+  --auth-parameters USERNAME=demo@example.com,PASSWORD='Passw0rd!' \
+  --query 'AuthenticationResult.IdToken' --output text)
+echo ${ID_TOKEN:0:40}
+
+Call without token (should be 401):
+
+> curl -i -s -X POST "${API_URL}/score" \
+  -H "Content-Type: application/json" \
+  --data-binary @txn.json 
+# HTTP/1.1 401 Unauthorized
+
+
+Call with token (should pass auth → 501 mock):
+
+> curl -i -s -X POST "${API_URL}/score" \
+  -H "Authorization: Bearer $ID_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data-binary @txn.json
