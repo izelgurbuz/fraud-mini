@@ -248,6 +248,33 @@ Resources:
         - ALLOW_USER_PASSWORD_AUTH
         - ALLOW_REFRESH_TOKEN_AUTH
 
+  ScoreFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: fraudmini-score
+      CodeUri: src/score/
+      Handler: app.handler
+      Runtime: python3.11
+      Timeout: 5
+      MemorySize: 256
+      Environment:
+        Variables:
+          TRANSACTIONS_TABLE: !Ref TransactionsTable
+          DECISIONS_TABLE: !Ref DecisionsTable
+          RULES_TABLE: !Ref RulesTable
+          RAW_BUCKET: !Ref RawEventsBucket
+          KMS_KEY_ARN: !GetAtt AppDataKey.Arn
+          RULE_VERSION: v1
+      Policies:
+        - AWSLambdaBasicExecutionRole
+  ScoreFunctionInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt ScoreFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/score"
+
   ApiGateway:
     Type: AWS::Serverless::Api
     Properties:
@@ -344,13 +371,10 @@ Resources:
                 "400": { description: "Bad Request - validation failed" }
                 "401": { description: "Unauthorized - missing/invalid JWT" }
               x-amazon-apigateway-integration:
-                type: mock
-                requestTemplates:
-                  application/json: |
-                    {"statusCode": 501}
-                responses:
-                  default:
-                    statusCode: "501"
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub >-
+                  arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ScoreFunction.Arn}/invocations
 
 Outputs:
   ApiUrl:
