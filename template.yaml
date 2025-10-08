@@ -7,8 +7,17 @@ Globals:
     Runtime: python3.11
     Timeout: 5
     MemorySize: 256
+  Api:
+    AccessLogSetting:
+      DestinationArn: !GetAtt ApiAccessLogGroup.Arn
+      Format: '{"requestId":"$context.requestId","status":"$context.status","errorMessage":"$context.error.message"}'
 
 Resources:
+  ApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/apigateway/fraudmini-access-logs
+      RetentionInDays: 14
   AppDataKey:
     Type: AWS::KMS::Key
     Properties:
@@ -267,6 +276,20 @@ Resources:
           RULE_VERSION: v1
       Policies:
         - AWSLambdaBasicExecutionRole
+        - Statement:
+            Effect: Allow
+            Action: dynamodb:PutItem
+            Resource: !GetAtt TransactionsTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: !GetAtt AppDataKey.Arn
+
   ScoreFunctionInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
