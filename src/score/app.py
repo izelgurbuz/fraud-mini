@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timezone
 
 import boto3
+from boto3.dynamodb.conditions import Key
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -23,6 +24,16 @@ _rules_cache = None
 
 def _bad(msg):
     return {"statusCode": 400, "body": json.dumps({"error": msg})}
+
+
+def _dec(v):
+    if isinstance(v, float):
+        return decimal.Decimal(str(v))
+    if isinstance(v, dict):
+        return {k: _dec(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_dec(x) for x in v]
+    return v
 
 
 def load_rules():
@@ -45,14 +56,14 @@ def load_rules():
     return _rules_cache
 
 
-def _dec(v):
-    if isinstance(v, float):
-        return decimal.Decimal(str(v))
-    if isinstance(v, dict):
-        return {k: _dec(x) for k, x in v.items()}
-    if isinstance(v, list):
-        return [_dec(x) for x in v]
-    return v
+def query_recent(user_id, limit=50):
+    resp = txns.query(
+        IndexName="GSI1_UserTs",
+        KeyConditionExpression=Key("user_id").eq(user_id),
+        ScanIndexForward=False,
+        limit=limit,
+    )
+    return resp.get("Items", [])
 
 
 def decide(txn, rules):
@@ -65,9 +76,20 @@ def decide(txn, rules):
     r1 = rules["R1"]
     thr = r1["threshold"]
     if float(txn.get("amount", 0)) > thr:
-        score += r1["weight"]
+        score += int(r1["weight"])
         reasons.append("amount_above_threshold")
         fired.append("R1")
+
+    r3 = rules["R3"]
+    if r3:
+        seen = any(
+            item.get("device_id") == txn["device_id"]
+            for item in query_recent(txn["user_id"])
+        )
+        if not seen:
+            score += int(r3["weight"])
+            reasons.append(r3["name"])
+            fired.append("R3")
 
     decision = "allow"
     if score >= 70:

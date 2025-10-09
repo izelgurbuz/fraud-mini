@@ -183,9 +183,22 @@ Resources:
       AttributeDefinitions:
         - AttributeName: transaction_id
           AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: ts
+          AttributeType: S
       KeySchema:
         - AttributeName: transaction_id
           KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1_UserTs
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: ts
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
       SSESpecification:
@@ -284,6 +297,10 @@ Resources:
             Effect: Allow
             Action: dynamodb:Scan
             Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RulesTable}
+        - Statement:
+            Effect: Allow
+            Action: dynamodb:Query
+            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TransactionsTable}/index/*
         - Statement:
             Effect: Allow
             Action:
