@@ -17,12 +17,15 @@ RULE_VERSION = os.environ.get("RULE_VERSION", "v1")
 DEC_TABLE = os.environ["DECISIONS_TABLE"]
 RAW_BUCKET = os.environ["RAW_BUCKET"]
 KMS_KEY_ARN = os.environ["KMS_KEY_ARN"]
+ALERTS_TOPIC = os.environ.get("ALERTS_TOPIC")
+
 
 ddb = boto3.resource("dynamodb")
 txns = ddb.Table(TXN_TABLE)
 rules_table = ddb.Table(RULES_TABLE)
 decs = ddb.Table(DEC_TABLE)
 s3 = boto3.client("s3")
+sns = boto3.client("sns")
 
 
 _rules_cache = None
@@ -127,7 +130,7 @@ def decide(txn, rules):
     decision = "allow"
     if score >= 70:
         decision = "block"
-    elif score >= 40:
+    elif score >= 30:
         decision = "challenge"
     return score, decision, reasons, fired
 
@@ -147,6 +150,25 @@ def _put_raw(txn, dec_item):
         ContentType="application/json",
     )
     return key
+
+
+def _publish_alert(dec_item):
+    if not ALERTS_TOPIC:
+        return
+    if dec_item["decision"] not in ("challenge", "block"):
+        return
+    # Keep it minimal: no PII, only IDs and reasons
+    subject = f"[fraudmini] {dec_item['decision'].upper()} score={dec_item['score']} id={dec_item['transaction_id']}"
+    message = json.dumps(
+        {
+            "transaction_id": dec_item["transaction_id"],
+            "decision": dec_item["decision"],
+            "score": dec_item["score"],
+            "reasons": dec_item.get("reasons", []),
+            "rule_version": dec_item.get("rule_version"),
+        }
+    )
+    sns.publish(TopicArn=ALERTS_TOPIC, Subject=subject[:100], Message=message)
 
 
 def handler(event, context):
@@ -204,6 +226,11 @@ def handler(event, context):
     except Exception as e:
         print("S3 write failed:", e)
         s3_key = None
+
+    try:
+        _publish_alert(dec_item)
+    except Exception as e:
+        print("SNS publish failed:", e)
 
     out = {**dec_item, "s3_key": s3_key}
     return {

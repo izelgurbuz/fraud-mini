@@ -39,6 +39,11 @@ Resources:
       AliasName: alias/fraudmini-appdata
       TargetKeyId: !Ref AppDataKey
 
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: fraudmini-alerts
+
   RawEventsBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -287,6 +292,7 @@ Resources:
           RAW_BUCKET: !Ref RawEventsBucket
           KMS_KEY_ARN: !GetAtt AppDataKey.Arn
           RULE_VERSION: v1
+          ALERTS_TOPIC: !Ref AlertsTopic
       Policies:
         - AWSLambdaBasicExecutionRole
         - Statement:
@@ -322,6 +328,10 @@ Resources:
             Effect: Allow
             Action: s3:PutObject
             Resource: !Sub "arn:aws:s3:::${RawEventsBucket}/*"
+        - Statement:
+            Effect: Allow
+            Action: sns:Publish
+            Resource: !Ref AlertsTopic
 
   ScoreFunctionInvokePermission:
     Type: AWS::Lambda::Permission
@@ -464,3 +474,6 @@ Outputs:
   CognitoAppClientId:
     Description: Cognito App Client ID
     Value: !Ref CognitoUserPoolClient
+  AlertsTopicArn:
+    Description: SNS alerts topic ARN
+    Value: !Ref AlertsTopic

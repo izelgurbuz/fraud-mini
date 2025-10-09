@@ -155,3 +155,14 @@ curl -i -s -X POST "${API_URL}/score" \
   -d '{"transaction_id":"txn_bad","amount":-5}'
 
 
+----------
+
+subscribe your email now
+
+TOPIC_ARN=$(aws cloudformation describe-stacks --stack-name fraudmini \
+  --query "Stacks[0].Outputs[?OutputKey=='AlertsTopicArn'].OutputValue" --output text)
+
+aws sns subscribe \
+  --topic-arn "$TOPIC_ARN" \
+  --protocol email \
+  --notification-endpoint "<your.email@example.com>"
