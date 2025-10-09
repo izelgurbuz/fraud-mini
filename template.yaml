@@ -279,7 +279,11 @@ Resources:
         - Statement:
             Effect: Allow
             Action: dynamodb:PutItem
-            Resource: !GetAtt TransactionsTable.Arn
+            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TransactionsTable}
+        - Statement:
+            Effect: Allow
+            Action: dynamodb:Scan
+            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RulesTable}
         - Statement:
             Effect: Allow
             Action:
@@ -379,7 +383,7 @@ Resources:
                     statusCode: "200"
           /score:
             post:
-              summary: "Score a transaction (auth required; scoring not implemented until Stage 3)"
+              summary: "Score a transaction "
               x-amazon-apigateway-request-validator: body-only
               security:
                 - CognitoAuthorizer: []
@@ -390,7 +394,8 @@ Resources:
                     schema:
                       $ref: "#/components/schemas/Transaction"
               responses:
-                "501": { description: "Not implemented (Stage 1/2)" }
+                "200": { description: "OK" }
+                "501": { description: "Not implemented" }
                 "400": { description: "Bad Request - validation failed" }
                 "401": { description: "Unauthorized - missing/invalid JWT" }
               x-amazon-apigateway-integration:

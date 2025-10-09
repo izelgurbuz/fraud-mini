@@ -108,3 +108,83 @@ Lambda parses input
 KMS + DynamoDB working
 Fully functional deployment
 ```
+
+## Debug Notes – Local Lambda Debugging with AWS SAM
+
+Goal: Debug Lambda logic locally instead of deploying on AWS every time.
+
+1. Start local API
+   sam build
+   sam local start-api --env-vars env.json
+
+sam build → packages latest code.
+
+--env-vars → provides environment variables (normally passed by CloudFormation).
+Example:
+
+{
+"ScoreFunction": {
+"TRANSACTIONS_TABLE": "fraudmini-transactions-local",
+"RULES_TABLE": "fraudmini-rules-local",
+"RULE_VERSION": "v1"
+}
+}
+
+2. Understand what runs locally
+
+SAM starts a local HTTP API Gateway and also runs the Lambda functions themselves in local Docker containers.
+
+So both your API and function code execute entirely on your machine.
+
+Only AWS services like DynamoDB are remote (unless you use DynamoDB Local).
+
+3. Fixing environment variable errors
+
+At first, the Lambda failed because it couldn’t find environment variables from CloudFormation.
+
+Solution: created env.json and passed it explicitly with --env-vars.
+
+4. Fixing table name errors
+
+DynamoDB requires real physical names, not logical IDs.
+
+Updated env.json values to use full names like:
+
+fraudmini-transactions-111111111111-eu-west-2
+
+5. Seeing logs / prints
+
+print() didn’t show up because the container reused an old build (warm container) and stdout was buffered.
+
+Fixed by:
+
+Rebuilding → sam build
+
+Restarting SAM → sam local start-api
+
+Using proper logging:
+
+import logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+logger.info("Event: %s", event)
+
+SAM always forwards logger.info to console.
+
+6. Notes about refresh behavior
+
+SAM automatically reloads small code edits, but not always reliably.
+
+For guaranteed updates:
+
+sam build && sam local start-api
+
+or use
+
+sam sync --watch
+
+✅ Final outcome
+
+API and Lambda worked locally with real AWS services.
+
+Logs visible, logic debugged, correct response returned.
