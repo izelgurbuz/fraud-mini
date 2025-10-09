@@ -1,0 +1,30 @@
+ddb = boto3.resource("dynamodb")
+table = ddb.Table("fraudmini-transactions")
+
+def fetch_recent(uid):
+    resp = table.query(
+        IndexName="GSI1_UserTs",
+        KeyConditionExpression=Key("user_id").eq(uid),
+        ScanIndexForward=False,
+        Limit=10,
+    )
+    return uid, [tx["transaction_id"] for tx in resp["Items"]]
+
+with concurrent.futures.ThreadPoolExecutor() as ex:
+    user_to_txns = dict(ex.map(fetch_recent, ["u1", "u2", "u3", "u4", "u5"]))
+
+-----------------------------------------------------------
+
+txn_ids = [tx for txns in user_to_txns.values() for tx in txns]
+
+client = boto3.client("dynamodb")
+
+resp = client.batch_get_item(
+    RequestItems={
+        "fraudmini-transactions": {
+            "Keys": [{"transaction_id": {"S": tid}} for tid in txn_ids]
+        }
+    }
+)
+
+all_txns = resp["Responses"]["fraudmini-transactions"]

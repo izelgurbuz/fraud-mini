@@ -15,11 +15,14 @@ TXN_TABLE = os.environ["TRANSACTIONS_TABLE"]
 RULES_TABLE = os.environ["RULES_TABLE"]
 RULE_VERSION = os.environ.get("RULE_VERSION", "v1")
 DEC_TABLE = os.environ["DECISIONS_TABLE"]
+RAW_BUCKET = os.environ["RAW_BUCKET"]
+KMS_KEY_ARN = os.environ["KMS_KEY_ARN"]
 
 ddb = boto3.resource("dynamodb")
 txns = ddb.Table(TXN_TABLE)
 rules_table = ddb.Table(RULES_TABLE)
 decs = ddb.Table(DEC_TABLE)
+s3 = boto3.client("s3")
 
 
 _rules_cache = None
@@ -129,6 +132,23 @@ def decide(txn, rules):
     return score, decision, reasons, fired
 
 
+def _put_raw(txn, dec_item):
+    now = datetime.now(timezone.utc).isoformat()
+    key = f"raw/{now}/{txn['transaction_id']}.json"
+    blob = json.dumps(
+        {"transaction": txn, "decision": dec_item}, separators=(",", ":")
+    ).encode("utf-8")
+    s3.put_object(
+        Bucket=RAW_BUCKET,
+        Key=key,
+        Body=blob,
+        ServerSideEncryption="aws:kms",
+        SSEKMSKeyId=KMS_KEY_ARN,
+        ContentType="application/json",
+    )
+    return key
+
+
 def handler(event, context):
     if "body" not in event:
         return _bad("Missing body")
@@ -144,6 +164,24 @@ def handler(event, context):
     if missing:
         return _bad(f"Missing fields {','.join(missing)}")
 
+    # Idempotency: if already decided, return the same
+    txn_id = txn["transaction_id"]
+    existing = decs.get_item(Key={"transaction_id": txn_id}).get("Item")
+    if existing:
+        out = {
+            "transaction_id": txn_id,
+            "score": int(existing.get("score", 0)),
+            "decision": existing.get("decision", "allow"),
+            "reasons": existing.get("reasons", []),
+            "rule_version": existing.get("rule_version", RULE_VERSION),
+            "idempotent": True,
+        }
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps(out),
+        }
+    # New transaction path
     txn["created_at"] = datetime.now(timezone.utc).isoformat()
 
     txns.put_item(Item=_dec(txn))
@@ -161,17 +199,15 @@ def handler(event, context):
     }
     decs.put_item(Item=dec_item)
 
-    resp = {
-        "transaction_id": txn["transaction_id"],
-        "score": score,
-        "decision": decision,
-        "reasons": reasons,
-        "rule_version": RULE_VERSION,
-        "rules_fired": fired,
-    }
-    logger.info("*************************************", resp)
+    try:
+        s3_key = _put_raw(txn, dec_item)
+    except Exception as e:
+        print("S3 write failed:", e)
+        s3_key = None
+
+    out = {**dec_item, "s3_key": s3_key}
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(resp),
+        "body": json.dumps(out),
     }

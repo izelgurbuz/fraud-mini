@@ -299,6 +299,10 @@ Resources:
             Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DecisionsTable}
         - Statement:
             Effect: Allow
+            Action: dynamodb:GetItem
+            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DecisionsTable}
+        - Statement:
+            Effect: Allow
             Action: dynamodb:Scan
             Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RulesTable}
         - Statement:
@@ -314,6 +318,10 @@ Resources:
               - kms:GenerateDataKey*
               - kms:DescribeKey
             Resource: !GetAtt AppDataKey.Arn
+        - Statement:
+            Effect: Allow
+            Action: s3:PutObject
+            Resource: !Sub "arn:aws:s3:::${RawEventsBucket}/*"
 
   ScoreFunctionInvokePermission:
     Type: AWS::Lambda::Permission
