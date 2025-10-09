@@ -14,10 +14,13 @@ logger.setLevel(logging.INFO)
 TXN_TABLE = os.environ["TRANSACTIONS_TABLE"]
 RULES_TABLE = os.environ["RULES_TABLE"]
 RULE_VERSION = os.environ.get("RULE_VERSION", "v1")
+DEC_TABLE = os.environ["DECISIONS_TABLE"]
 
 ddb = boto3.resource("dynamodb")
 txns = ddb.Table(TXN_TABLE)
 rules_table = ddb.Table(RULES_TABLE)
+decs = ddb.Table(DEC_TABLE)
+
 
 _rules_cache = None
 
@@ -42,8 +45,6 @@ def load_rules():
         items = []
         resp = rules_table.scan(Limit=100)
         items.extend(resp.get("Items", []))
-        logger.info(f"Scan resp: {resp}")
-        logger.info(f"ITEMS: {items}")
 
         while "LastEvaluatedKey" in resp:
             resp = rules_table.scan(
@@ -61,7 +62,7 @@ def query_recent(user_id, limit=50):
         IndexName="GSI1_UserTs",
         KeyConditionExpression=Key("user_id").eq(user_id),
         ScanIndexForward=False,
-        limit=limit,
+        Limit=limit,
     )
     return resp.get("Items", [])
 
@@ -73,23 +74,52 @@ def decide(txn, rules):
         fired,
     ) = 0, [], []
 
+    amount = float(txn.get("amount", 0))
+    device_id = txn.get("device_id")
+    user_id = txn.get("user_id")
+    merchant_id = txn.get("merchant_id")
+    bin6 = txn.get("card_bin")
+    attempts = int(txn.get("attempts_last_10min", 0))
+
+    # R1 amount threshold
     r1 = rules["R1"]
     thr = r1["threshold"]
-    if float(txn.get("amount", 0)) > thr:
+    if float(amount) > thr:
         score += int(r1["weight"])
         reasons.append("amount_above_threshold")
         fired.append("R1")
 
+    # R3 new_device
     r3 = rules["R3"]
     if r3:
-        seen = any(
-            item.get("device_id") == txn["device_id"]
-            for item in query_recent(txn["user_id"])
-        )
+        seen = any(item.get("device_id") == device_id for item in query_recent(user_id))
         if not seen:
             score += int(r3["weight"])
             reasons.append(r3["name"])
             fired.append("R3")
+    # R4 attempts
+    r4 = rules["R4"]
+    attempts = txn["attempts_last_10min"]
+    if attempts > int(r4.get("threshold", 5)):
+        score += int(r4["weight"])
+        reasons.append(r4["name"])
+        fired.append("R4")
+
+    r5 = rules["R5"]
+    if amount > int(r5.get("threshold", 5)) and merchant_id:
+        if not any(
+            merchant_id == item["merchant_id"] for item in query_recent(user_id)
+        ):
+            score += int(r5["weight"])
+            reasons.append(r5["name"])
+            fired.append("R5")
+
+    r6 = rules["R6"]
+    risky = set(r6.get("list", []))
+    if bin6 and bin6 in risky:
+        score += int(r6["weight"])
+        reasons.append(r6["name"])
+        fired.append("R6")
 
     decision = "allow"
     if score >= 70:
@@ -100,8 +130,6 @@ def decide(txn, rules):
 
 
 def handler(event, context):
-    logger.info(f"Event: {event}")
-
     if "body" not in event:
         return _bad("Missing body")
 
@@ -122,6 +150,17 @@ def handler(event, context):
     rules = load_rules()
     score, decision, reasons, fired = decide(txn, rules)
 
+    dec_item = {
+        "transaction_id": txn["transaction_id"],
+        "score": int(score),
+        "decision": decision,
+        "reasons": reasons,
+        "rule_version": RULE_VERSION,
+        "rules_fired": fired,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    decs.put_item(Item=dec_item)
+
     resp = {
         "transaction_id": txn["transaction_id"],
         "score": score,
@@ -130,7 +169,7 @@ def handler(event, context):
         "rule_version": RULE_VERSION,
         "rules_fired": fired,
     }
-
+    logger.info("*************************************", resp)
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "application/json"},

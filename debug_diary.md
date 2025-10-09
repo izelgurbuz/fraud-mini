@@ -177,7 +177,7 @@ SAM automatically reloads small code edits, but not always reliably.
 
 For guaranteed updates:
 
-sam build && sam local start-api
+sam build && sam local start-api --env-vars env.json
 
 or use
 

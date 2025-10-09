@@ -295,6 +295,10 @@ Resources:
             Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TransactionsTable}
         - Statement:
             Effect: Allow
+            Action: dynamodb:PutItem
+            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DecisionsTable}
+        - Statement:
+            Effect: Allow
             Action: dynamodb:Scan
             Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RulesTable}
         - Statement:
