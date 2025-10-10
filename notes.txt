@@ -166,3 +166,35 @@ aws sns subscribe \
   --topic-arn "$TOPIC_ARN" \
   --protocol email \
   --notification-endpoint "<your.email@example.com>"
+
+----------
+
+/decision/{transaction_id}:
+  get:
+    summary: "Fetch a decision by transaction_id"
+    security:
+      - CognitoAuthorizer: []
+    parameters:
+      - name: transaction_id
+        in: path
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 64 }
+
+in :
+
+| Value    | Meaning               | Example                      |
+| -------- | --------------------- | ---------------------------- |
+| `path`   | inside the URL path   | `/decision/{transaction_id}` |
+| `query`  | after `?` in URL      | `/decision?status=approved`  |
+| `header` | inside an HTTP header | `X-Correlation-ID: abc123`   |
+| `cookie` | in a cookie           | `sessionid=xyz`              |
+
+Path parameters are always required.
+
+schema:
+
+This describes the data type and validation rules for that parameter.
+
+e.g. schema:
+  type: string
+  pattern: "^[A-F0-9]{8}$"

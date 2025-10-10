@@ -9,4 +9,13 @@ manifest_hash = ""
 packagetype = "Zip"
 functions = ["ScoreFunction"]
 
+[function_build_definitions.b8492303-e254-4c9d-9a94-0721f718231f]
+codeuri = "/Users/izel/Desktop/fraudmini/src/decision_get"
+runtime = "python3.11"
+architecture = "x86_64"
+handler = "app.handler"
+manifest_hash = ""
+packagetype = "Zip"
+functions = ["GetDecisionFunction"]
+
 [layer_build_definitions]

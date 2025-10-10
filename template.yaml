@@ -18,6 +18,25 @@ Resources:
     Properties:
       LogGroupName: /aws/apigateway/fraudmini-access-logs
       RetentionInDays: 14
+
+  ScoreFunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: fraudmini-score-errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ScoreFunction
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertsTopic
+
   AppDataKey:
     Type: AWS::KMS::Key
     Properties:
@@ -341,6 +360,42 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/score"
 
+  GetDecisionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: fraudmini-get-decision
+      CodeUri: src/decision_get/
+      Handler: app.handler
+      Runtime: python3.11
+      Timeout: 5
+      MemorySize: 256
+      Environment:
+        Variables:
+          DECISIONS_TABLE: !Ref DecisionsTable
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Statement:
+            Effect: Allow
+            Action: dynamodb:GetItem
+            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DecisionsTable}
+        - Statement:
+            Effect: Allow
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: !GetAtt AppDataKey.Arn
+
+  GetDecisionFunctionInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt GetDecisionFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/GET/decision/*"
+
   ApiGateway:
     Type: AWS::Serverless::Api
     Properties:
@@ -420,6 +475,27 @@ Resources:
                 responses:
                   default:
                     statusCode: "200"
+
+          /decision/{transaction_id}:
+            get:
+              summary: "Fetch a decision by transaction_id"
+              security:
+                - CognitoAuthorizer: []
+              parameters:
+                - name: transaction_id
+                  in: path
+                  required: true
+                  schema: { type: string, minLength: 1, maxLength: 64 }
+              responses:
+                "200": { description: "Decision found" }
+                "404": { description: "Not found" }
+                "401": { description: "Unauthorized" }
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub >-
+                  arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetDecisionFunction.Arn}/invocations
+
           /score:
             post:
               summary: "Score a transaction "
