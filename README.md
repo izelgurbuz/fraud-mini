@@ -113,3 +113,88 @@ Hands-on AWS proficiency (Lambda, SQS, S3, KMS, IAM, SAM)
 Secure data handling in production-like pipelines
 
 Practical event-driven architecture for transaction analytics
+
+```bash
+                    ┌─────────────────────────────┐
+                    │     fraudmini system        │
+                    └─────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────┐
+│                1. RawEventsBucket (S3)                 │
+│  - KMS-encrypted with AppDataKey                       │
+│  - Event: ObjectCreated:* on inbox/*.csv               │
+│  - Sends notification to RawEventsQueue (SQS)          │
+│                                                        │
+│  BucketPolicy:                                         │
+│    - Deny insecure transport                           │
+│    - Enforce KMS encryption on PUT                     │
+│                                                        │
+│  KMS Policy:                                           │
+│    - Allows S3 to GenerateDataKey + Decrypt            │
+│                                                        │
+└────────────────────────────────────────────────────────┘
+                                   │
+                                   │  (S3 → SQS Notification)
+                                   ▼
+┌────────────────────────────────────────────────────────┐
+│                2. RawEventsQueue (SQS)                 │
+│  - KMS-encrypted (AppDataKey)                          │
+│  - QueuePolicy allows S3:s3.amazonaws.com to SendMessage│
+│    only from RawEventsBucket ARN + same AWS account     │
+│                                                        │
+│  Event Source for: BatchIngest Lambda                  │
+└────────────────────────────────────────────────────────┘
+                                   │
+                                   │  (SQS → Lambda trigger)
+                                   ▼
+┌────────────────────────────────────────────────────────┐
+│                3. BatchIngestFunction (Lambda)         │
+│  - Reads events from RawEventsQueue                    │
+│  - Downloads CSV from RawEventsBucket                  │
+│  - Validates & parses records                          │
+│  - Sends each record → TransactionsQueue (SQS)         │
+│  - Writes receipts + copies to RefinedEventsBucket     │
+│  - Deletes processed CSV from RawEventsBucket          │
+│                                                        │
+│  IAM Policy:                                           │
+│    - s3:GetObject/DeleteObject on RawEventsBucket      │
+│    - s3:PutObject on RefinedEventsBucket               │
+│    - sqs:SendMessage on TransactionsQueue              │
+│    - kms:Encrypt/Decrypt on AppDataKey                 │
+└────────────────────────────────────────────────────────┘
+                                   │
+                                   │  (SQS → Lambda trigger)
+                                   ▼
+┌────────────────────────────────────────────────────────┐
+│                4. TransactionsQueue (SQS)              │
+│  - Buffers parsed transactions                         │
+│  - Event Source for ScoreFunction                      │
+└────────────────────────────────────────────────────────┘
+                                   │
+                                   │  (SQS → Lambda trigger)
+                                   ▼
+┌────────────────────────────────────────────────────────┐
+│                5. ScoreFunction (Lambda)               │
+│  - Processes transaction messages                      │
+│  - Evaluates fraud/risk logic                          │
+│  - Writes results to DynamoDB Tables                   │
+│  - Publishes alerts to AlertsTopic (SNS)               │
+│  - Uses AppDataKey for encryption/decryption            │
+└────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────┐
+│                6. RefinedEventsBucket (S3)             │
+│  - Receipts (.json) and processed copies (.csv)        │
+│  - KMS-encrypted with AppDataKey                       │
+│  - Not part of trigger chain → prevents recursion      │
+└────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────┐
+│                7. AlertsTopic (SNS)                    │
+│  - Receives high-risk alerts from ScoreFunction        │
+│  - Can later fan-out to email/SMS notifications        │
+└────────────────────────────────────────────────────────┘
+```
