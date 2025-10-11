@@ -1,0 +1,3 @@
+transaction_id,user_id,amount,currency,merchant_id,channel,ts,ip,country,device_id,card_bin,card_last4,attempts_last_10min
+batch_txn_003,u_100,12.50,GBP,m_AMZ,card_not_present,2025-09-29T08:15:13Z,81.2.69.142,GB,dev_a,400000,4242,0
+batch_txn_004,u_100,2500.00,GBP,m_LUX,card_not_present,2025-09-29T09:20:13Z,81.2.69.142,GB,dev_b,777777,0005,6

@@ -1,0 +1,19 @@
+S3 → SQS → Lambda
+┌────────┐
+│  file1.csv uploaded
+│  file2.csv uploaded
+└────────┘
+      ↓
+┌──────────────┐
+│ RawEventsQueue│
+│  • msg1 = {"key": file1.csv}
+│  • msg2 = {"key": file2.csv}
+└──────────────┘
+      ↓ (BatchSize=2)
+┌────────────────────────┐
+│ BatchIngest Lambda     │
+│ reads both messages → OK│
+│ returns success         │
+└────────────────────────┘
+      ↓
+✅ SQS deletes msg1 & msg2 automatically

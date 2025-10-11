@@ -15,7 +15,7 @@ TXN_TABLE = os.environ["TRANSACTIONS_TABLE"]
 RULES_TABLE = os.environ["RULES_TABLE"]
 RULE_VERSION = os.environ.get("RULE_VERSION", "v1")
 DEC_TABLE = os.environ["DECISIONS_TABLE"]
-RAW_BUCKET = os.environ["RAW_BUCKET"]
+REFINED_BUCKET = os.environ["REFINED_BUCKET"]
 KMS_KEY_ARN = os.environ["KMS_KEY_ARN"]
 ALERTS_TOPIC = os.environ.get("ALERTS_TOPIC")
 
@@ -135,14 +135,14 @@ def decide(txn, rules):
     return score, decision, reasons, fired
 
 
-def _put_raw(txn, dec_item):
+def _put_bucket(txn, dec_item):
     now = datetime.now(timezone.utc).isoformat()
     key = f"raw/{now}/{txn['transaction_id']}.json"
     blob = json.dumps(
         {"transaction": txn, "decision": dec_item}, separators=(",", ":")
     ).encode("utf-8")
     s3.put_object(
-        Bucket=RAW_BUCKET,
+        Bucket=REFINED_BUCKET,
         Key=key,
         Body=blob,
         ServerSideEncryption="aws:kms",
@@ -172,14 +172,34 @@ def _publish_alert(dec_item):
 
 
 def handler(event, context):
-    if "body" not in event:
-        return _bad("Missing body")
-
+    """
+    Works for both:
+    - API Gateway events: { "body": "{...}" }
+    - SQS events: { "Records": [ {"body": "{...}"} ] }
+    """
     try:
-        txn = json.loads(event["body"])
-    except Exception:
-        return _bad("Invalid JSON")
+        if "Records" in event:
+            for record in event["Records"]:
+                body = json.loads(record["body"])
+                process_txn(body)
+            return {"statusCode": 200, "body": json.dumps({"ok": True})}
 
+        if "body" in event:
+            txn = json.loads(event["body"])
+            process_txn(txn)
+            return {"statusCode": 200, "body": json.dumps({"ok": True})}
+
+        return {
+            "statusCode": 400,
+            "body": json.dumps({"error": "Unknown event format"}),
+        }
+
+    except Exception as e:
+        logger.exception("Error in ScoreFunction")
+        return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
+
+
+def process_txn(txn):
     needed = ["transaction_id", "user_id", "ts"]
     missing = [k for k in needed if k not in txn]
 
@@ -222,7 +242,7 @@ def handler(event, context):
     decs.put_item(Item=dec_item)
 
     try:
-        s3_key = _put_raw(txn, dec_item)
+        s3_key = _put_bucket(txn, dec_item)
     except Exception as e:
         print("S3 write failed:", e)
         s3_key = None

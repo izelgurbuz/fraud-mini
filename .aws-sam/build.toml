@@ -18,4 +18,13 @@ manifest_hash = ""
 packagetype = "Zip"
 functions = ["GetDecisionFunction"]
 
+[function_build_definitions.93219991-4a17-4c16-8bef-f1096d60cbe6]
+codeuri = "/Users/izel/Desktop/fraudmini/src/batch_ingest"
+runtime = "python3.11"
+architecture = "x86_64"
+handler = "app.handler"
+manifest_hash = ""
+packagetype = "Zip"
+functions = ["BatchIngestFunction"]
+
 [layer_build_definitions]

@@ -51,6 +51,17 @@ Resources:
               AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
             Action: "kms:*"
             Resource: "*"
+          - Sid: AllowS3ToUseKeyForSQS
+            Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action:
+              - kms:GenerateDataKey
+              - kms:Decrypt
+            Resource: "*"
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Sub ${AWS::AccountId}
 
   AppDataKeyAlias:
     Type: AWS::KMS::Alias
@@ -62,6 +73,33 @@ Resources:
     Type: AWS::SNS::Topic
     Properties:
       TopicName: fraudmini-alerts
+
+  RawEventsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: fraudmini-raw-events-queue
+      VisibilityTimeout: 120
+      MessageRetentionPeriod: 86400 # 1 day
+      KmsMasterKeyId: !Ref AppDataKey
+
+  RawEventsQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref RawEventsQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowS3SendMessage
+            Effect: Allow
+            Principal: { Service: "s3.amazonaws.com" }
+            Action: "sqs:SendMessage"
+            Resource: !GetAtt RawEventsQueue.Arn
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub arn:aws:s3:::${RawEventsBucket}
+              StringEquals:
+                aws:SourceAccount: !Sub ${AWS::AccountId}
 
   RawEventsBucket:
     Type: AWS::S3::Bucket
@@ -78,6 +116,17 @@ Resources:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: aws:kms
               KMSMasterKeyID: !Ref AppDataKey
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: s3:ObjectCreated:*
+            Queue: !GetAtt RawEventsQueue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: inbox/
+                  - Name: suffix
+                    Value: .csv
 
   RawEventsBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -103,6 +152,48 @@ Resources:
             Condition:
               StringNotEquals:
                 s3:x-amz-server-side-encryption: "aws:kms"
+
+  RefinedEventsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub fraudmini-refined-events-${AWS::AccountId}-${AWS::Region}
+      VersioningConfiguration: { Status: Enabled }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref AppDataKey
+
+  RefinedEventsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref RefinedEventsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub arn:aws:s3:::${RefinedEventsBucket}
+              - !Sub arn:aws:s3:::${RefinedEventsBucket}/*
+            Condition:
+              Bool: { "aws:SecureTransport": "false" }
+          - Sid: EnforceKMSEncryptionOnPut
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:PutObject"
+            Resource: !Sub arn:aws:s3:::${RefinedEventsBucket}/*
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: "aws:kms"
+
   AppLogsBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -294,6 +385,75 @@ Resources:
         - ALLOW_USER_PASSWORD_AUTH
         - ALLOW_REFRESH_TOKEN_AUTH
 
+  BatchIngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: fraudmini-batch-ingest
+      CodeUri: src/batch_ingest/
+      Handler: app.handler
+      Runtime: python3.11
+      Timeout: 120
+      MemorySize: 512
+      Environment:
+        Variables:
+          REFINED_BUCKET: !Sub fraudmini-refined-events-${AWS::AccountId}-${AWS::Region}
+          QUEUE_URL: !Ref TransactionsQueue
+          KMS_KEY_ARN: !GetAtt AppDataKey.Arn
+      Policies:
+        - AWSLambdaBasicExecutionRole
+          # send messages to SQS
+        - Statement:
+            Effect: Allow
+            Action: sqs:ReceiveMessage
+            Resource: !GetAtt RawEventsQueue.Arn
+        - Statement:
+            Effect: Allow
+            Action: sqs:DeleteMessage
+            Resource: !GetAtt RawEventsQueue.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:DeleteObject
+              - s3:CopyObject
+            Resource: !Sub "arn:aws:s3:::${RawEventsBucket}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:PutObject
+            Resource: !Sub "arn:aws:s3:::${RefinedEventsBucket}/*"
+        - Statement:
+            Effect: Allow
+            Action: sqs:SendMessage
+            Resource: !GetAtt TransactionsQueue.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: !GetAtt AppDataKey.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !Sub "arn:aws:s3:::${RawEventsBucket}"
+      Events:
+        RawEventsQueueTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt RawEventsQueue.Arn
+            BatchSize: 5
+  TransactionsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: fraudmini-transactions-queue
+      VisibilityTimeout: 60 # > scorer Lambda timeout
+      MessageRetentionPeriod: 86400 # 1 day
+      KmsMasterKeyId: !Ref AppDataKey
+
   ScoreFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -308,7 +468,7 @@ Resources:
           TRANSACTIONS_TABLE: !Ref TransactionsTable
           DECISIONS_TABLE: !Ref DecisionsTable
           RULES_TABLE: !Ref RulesTable
-          RAW_BUCKET: !Ref RawEventsBucket
+          REFINED_BUCKET: !Ref RefinedEventsBucket
           KMS_KEY_ARN: !GetAtt AppDataKey.Arn
           RULE_VERSION: v1
           ALERTS_TOPIC: !Ref AlertsTopic
@@ -346,11 +506,17 @@ Resources:
         - Statement:
             Effect: Allow
             Action: s3:PutObject
-            Resource: !Sub "arn:aws:s3:::${RawEventsBucket}/*"
+            Resource: !Sub "arn:aws:s3:::${RefinedEventsBucket}/*"
         - Statement:
             Effect: Allow
             Action: sns:Publish
             Resource: !Ref AlertsTopic
+      Events:
+        TransactionsQueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt TransactionsQueue.Arn
+            BatchSize: 10
 
   ScoreFunctionInvokePermission:
     Type: AWS::Lambda::Permission
